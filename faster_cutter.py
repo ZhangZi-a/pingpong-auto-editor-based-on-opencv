@@ -74,7 +74,14 @@ def process_video_segments(input_cap, segments, output_path, progress=gr.Progres
     # 给无声视频加上拼接好的音频
     final_clip = video_clip.with_audio(final_audio)
 
-    final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac")
+    final_clip.write_videofile(
+        output_path,
+        codec="libx264",  # 视频编码器，libx264 是 H.264 编码，兼容且压缩效果好
+        audio_codec="aac",  # 音频编码器
+        bitrate="5000k",  # 视频码率，码率越高质量越好，文件越大（单位：k）
+        preset="medium",  # 编码预设，影响编码速度和质量 tradeoff，有 "ultrafast", "medium", "slow" 等
+        ffmpeg_params=["-crf", "23"]  # CRF 值，控制质量，18-28之间，越小质量越好（默认23）
+    )
 
     video_clip.close()
     original_video.close()
