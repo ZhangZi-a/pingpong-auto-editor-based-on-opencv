@@ -175,7 +175,7 @@ def start(cap, render, ROI_ratio, progress=None):
             count += 1
             frame_count += 1
 
-            if cv2.waitKey(5) & 0xFF == 27:
+            if render and cv2.waitKey(5) & 0xFF == 27:
                 break
 
             # 更新tqdm描述信息
