@@ -86,6 +86,12 @@ def batch_process_video(video_lst, roi_dict):
         annotations = start(cap, False, roi, i + 1, gr.Progress())
         cap.release()
 
+        annotations = sorted(annotations, key=lambda arg: arg[1] - arg[0], reverse=True)
+
+        if len(annotations) == 0:
+            print(f"第{i + 1}个视频无对局：{temp_dir}")
+            continue
+
         output_video_path = os.path.join(temp_dir, f"processed_output_{i + 1}.mp4")
         process_video_segments(path, annotations, output_video_path, i + 1, gr.Progress())
         output_video_paths.append(output_video_path)
@@ -152,7 +158,6 @@ with gr.Blocks() as demo:
     )
 
 demo.launch(
-    server_name="0.0.0.0",
     server_port=7860,
     max_file_size=3 * 1024 * 1024 * 1024,
     )
