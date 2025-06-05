@@ -83,7 +83,7 @@ def detect_ball(frame1, frame2, frame3, render, ROI_start, ROI_end, cur_frame):
 
     return is_detect
 
-def start(cap, render, ROI_ratio, progress=None):
+def start(cap, render, ROI_ratio, img_idx, progress=None):
     annotations = []
 
     # 获取总帧数
@@ -183,7 +183,7 @@ def start(cap, render, ROI_ratio, progress=None):
             pbar.update(1)
 
             if progress is not None:
-                progress(frame_count / total_fps, desc=f"正在生成切片序列 {frame_count}/{total_fps}")
+                progress(frame_count / total_fps, desc=f"第{img_idx}个视频处理中...  正在生成切片序列 {frame_count}/{total_fps}")
 
     # print(annotations)
 

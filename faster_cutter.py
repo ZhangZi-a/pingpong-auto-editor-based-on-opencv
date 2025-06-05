@@ -4,7 +4,7 @@ from tqdm import tqdm
 from moviepy import VideoFileClip, concatenate_audioclips
 import gradio as gr
 
-def process_video_segments(input_cap, segments, output_path, progress=gr.Progress()):
+def process_video_segments(input_cap, segments, output_path, img_idx, progress=gr.Progress()):
     """
     用OpenCV裁剪多段视频帧（无声），
     用MoviePy裁剪对应音频，
@@ -44,7 +44,7 @@ def process_video_segments(input_cap, segments, output_path, progress=gr.Progres
             out.write(frame)
 
         if progress is not None:
-            progress(count / segments_count, desc=f"正在合成视频切片 {count}/{segments_count}")
+            progress(count / segments_count, desc=f"第{img_idx}个视频处理中...  正在合成视频切片 {count}/{segments_count}")
         count += 1
 
     cap.release()
@@ -63,13 +63,13 @@ def process_video_segments(input_cap, segments, output_path, progress=gr.Progres
         audio_clips.append(audio_clip)
 
         if progress is not None:
-            progress(count / segments_count, desc=f"正在合成音频切片 {count}/{segments_count}")
+            progress(count / segments_count, desc=f"第{img_idx}个视频处理中...  正在合成音频切片 {count}/{segments_count}")
         count += 1
 
     final_audio = concatenate_audioclips(audio_clips)
 
     if progress is not None:
-        progress(1, desc='正在生成剪辑视频...')
+        progress(1, desc=f'第{img_idx}个视频处理中...  正在生成剪辑视频...')
 
     # 给无声视频加上拼接好的音频
     final_clip = video_clip.with_audio(final_audio)
@@ -78,7 +78,7 @@ def process_video_segments(input_cap, segments, output_path, progress=gr.Progres
         output_path,
         codec="libx264",  # 视频编码器，libx264 是 H.264 编码，兼容且压缩效果好
         audio_codec="aac",  # 音频编码器
-        bitrate="5000k",  # 视频码率，码率越高质量越好，文件越大（单位：k）
+        bitrate="6000k",  # 视频码率，码率越高质量越好，文件越大（单位：k）
         preset="medium",  # 编码预设，影响编码速度和质量 tradeoff，有 "ultrafast", "medium", "slow" 等
         ffmpeg_params=["-crf", "23"]  # CRF 值，控制质量，18-28之间，越小质量越好（默认23）
     )
