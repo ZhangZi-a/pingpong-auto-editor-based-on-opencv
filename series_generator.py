@@ -138,11 +138,11 @@ def start(cap, render, ROI_ratio, img_idx, progress=None):
                     end_frame = frame_count + int(fps * 0.7)
 
                     # 如果开头过早，则直接在上一个回合中加长末尾
-                    if should_skip:
-                        should_skip = False
-                        annotations[-1][1] = end_frame
-                    else:
-                        annotations.append([start_frame, end_frame])
+                    # if should_skip:
+                    #     should_skip = False
+                    #     annotations[-1][1] = end_frame
+                    # else:
+                    annotations.append([start_frame, end_frame])
                 # 仍然未检测到球，保持对局外状态
                 else:
                     out_of_game = True
@@ -166,8 +166,8 @@ def start(cap, render, ROI_ratio, img_idx, progress=None):
                     out_of_game = False
                     start_frame = max(1, frame_count - int(fps * 0.7))
                     # 如果开始点早于之前的末尾，则合并这一段
-                    if len(annotations) > 0 and start_frame < annotations[-1][1]:
-                        should_skip = True
+                    # if len(annotations) > 0 and start_frame < annotations[-1][1]:
+                    #     should_skip = True
                 detect_count += 1
 
             frame1, frame2 = frame2, frame3  # 更新帧
