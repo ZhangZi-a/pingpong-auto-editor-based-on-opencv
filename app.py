@@ -19,6 +19,8 @@ def handle_video_list(files):
     return path_lst, gr.update(choices=path_lst, value=path_lst[0] if path_lst else None), roi_dict
 
 def select_video(selected_video, frame_dict, roi_dict):
+    if selected_video is None:
+        return None, None, None, None, None, None, None
     cap = cv2.VideoCapture(selected_video)
 
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -45,7 +47,7 @@ def load_frame_and_set_roi(frame_idx, selected_video, roi_dict, frame_dict):
     cap.release()
 
     if not ret:
-        return None, None, None, None, None, None
+        return None, None, None, None, None
 
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     frame_dict[selected_video] = frame_rgb
@@ -79,10 +81,8 @@ def batch_process_video(video_lst, roi_dict):
         print(f"-----------------------------------------正在处理第{i + 1}个视频-----------------------------------------")
 
         cap = cv2.VideoCapture(path)
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         x1, y1, x2, y2 = roi_dict[path]
-        roi = ((x1 / w, y1 / h), (x2 / w, y2 / h))
+        roi = ((x1, y1), (x2, y2))
         annotations = start(cap, False, roi, i + 1, gr.Progress())
         cap.release()
 
@@ -107,7 +107,7 @@ with gr.Blocks() as demo:
     frame_dict_state = gr.State({})  # 存储当前每个视频的帧图像数据
     roi_dict_state = gr.State({})  # 每个视频的ROI设置
 
-    video_input = gr.File(label='输入视频', file_types=[".mp4", ".avi"], file_count="multiple", type="filepath")
+    video_input = gr.File(label='输入视频', file_types=[".mp4", ".avi", '.MP4', '.mov', '.MOV'], file_count="multiple", type="filepath")
     video_selector = gr.Dropdown(label='选择视频', choices=[])
     video_info = gr.Textbox(label="视频信息", interactive=False)
 
@@ -159,5 +159,5 @@ with gr.Blocks() as demo:
 
 demo.launch(
     server_port=7860,
-    max_file_size=3 * 1024 * 1024 * 1024,
+    max_file_size=10 * 1024 * 1024 * 1024,
     )

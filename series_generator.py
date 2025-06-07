@@ -8,7 +8,7 @@ from faster_cutter import process_video_segments
 def get_white_mask(f1, f2, f3):
     masks = []
     for frame in (f1, f2, f3):
-        masks.append(cv2.inRange(frame, (200, 200, 200), (255, 255, 255)))
+        masks.append(cv2.inRange(frame, (180, 180, 180), (255, 255, 255)))
     and_mask1 = cv2.bitwise_or(masks[0], masks[1])
     and_mask2 = cv2.bitwise_or(and_mask1, masks[2])
 
@@ -58,7 +58,7 @@ def detect_ball(frame1, frame2, frame3, render, ROI_start, ROI_end, cur_frame):
     if len(contours) > 0:
         target_cnt = max(contours, key=cv2.contourArea)
         area = cv2.contourArea(target_cnt)
-        if 60 < area < 90:
+        if 45 < area < 80:
             # 计算最小外接圆
             (x, y), radius = cv2.minEnclosingCircle(target_cnt)
             center = (int(x), int(y))
@@ -66,7 +66,8 @@ def detect_ball(frame1, frame2, frame3, render, ROI_start, ROI_end, cur_frame):
 
             # 圆形度筛选（轮廓面积与外接圆面积比）
             circularity = area / (np.pi * radius ** 2 + 1e-5)  # 避免除零
-            if 0.3 < circularity < 2:
+            if 0.45 < circularity < 2:
+                # print(area, circularity)
                 is_detect = True
                 if render:
                     cv2.circle(frame3, center, radius, (0, 255, 0), 2)  # 画圆
@@ -76,39 +77,42 @@ def detect_ball(frame1, frame2, frame3, render, ROI_start, ROI_end, cur_frame):
     if render:
         draw_ROI(ROI_start, ROI_end, cur_frame)
 
-        cv2.imshow("Original", cur_frame)
+        cv2.imshow("Original", frame3)
         cv2.imshow("white_mask", color_mask)
         cv2.imshow("Three-Frame mask", diff_mask)
         cv2.imshow("final_mask", final_diff)
 
     return is_detect
 
-def start(cap, render, ROI_ratio, img_idx, progress=None):
+def start(cap, render, ROI, img_idx, progress=None):
     annotations = []
 
     # 获取总帧数
     total_fps = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # 获取原始视频尺寸
-    original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-    # 计算缩放后的尺寸
-    width = 960
-    height = int(original_height / original_width * width)
-    frame_size = (width, height)
-
-    ROI_start = (int(width * ROI_ratio[0][0]), int(height * ROI_ratio[0][1]))
-    ROI_end = (int(width * ROI_ratio[1][0]), int(height * ROI_ratio[1][1]))
+    ROI_start = ROI[0]
+    ROI_end = ROI[1]
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))  # 帧率
     print(f'fps:{fps}')
+    threshold = int(fps * 0.13)
 
-    print(f'size:{frame_size}')
     _, frame1 = cap.read()
     _, frame2 = cap.read()
-    frame1 = cv2.resize(frame1, frame_size)[ROI_start[1]:ROI_end[1], ROI_start[0]:ROI_end[0]]
-    frame2 = cv2.resize(frame2, frame_size)[ROI_start[1]:ROI_end[1], ROI_start[0]:ROI_end[0]]
+    frame1 = frame1[ROI_start[1]:ROI_end[1], ROI_start[0]:ROI_end[0]]
+    frame2 = frame2[ROI_start[1]:ROI_end[1], ROI_start[0]:ROI_end[0]]
+
+    # 计算缩放后的尺寸
+    width = 540
+    h, w, _ = frame1.shape
+    height = int(h / w * width)
+    frame_size = (width, height)
+
+    print(f'ROI窗口大小：{frame_size}')
+
+    # 缩放ROI区域为固定大小
+    frame1 = cv2.resize(frame1, frame_size, interpolation=cv2.INTER_AREA)  # 这个参数好像是更清晰，不管算了
+    frame2 = cv2.resize(frame2, frame_size, interpolation=cv2.INTER_AREA)
 
     # 记录剪辑帧
     frame_count = 1
@@ -127,7 +131,7 @@ def start(cap, render, ROI_ratio, img_idx, progress=None):
         while True:
             # 每秒统计有多少帧测到了球，以此判断是否在对局中
             if count == fps:
-                if detect_count >= 5:
+                if detect_count >= threshold:
                     # print(f'detect count:{detect_count}')
                     steps_count += 1
                 # 到此为止不再检测到球，代表对局结束
@@ -150,13 +154,13 @@ def start(cap, render, ROI_ratio, img_idx, progress=None):
                 detect_count = 0
 
 
-            ret, frame3 = cap.read()
+            ret, cur_frame = cap.read()
             if not ret:
                 annotations[-1][1] = min(frame_count, annotations[-1][1])  # 修正最后一帧
                 break
 
-            cur_frame = cv2.resize(frame3, frame_size)
             frame3 = cur_frame[ROI_start[1]:ROI_end[1], ROI_start[0]:ROI_end[0]]
+            frame3 = cv2.resize(frame3, frame_size, interpolation=cv2.INTER_AREA)
 
             # 检测球
             if(detect_ball(frame1, frame2, frame3, render, ROI_start, ROI_end, cur_frame)):
@@ -193,14 +197,14 @@ def start(cap, render, ROI_ratio, img_idx, progress=None):
     return annotations
 
 if __name__ == '__main__':
-    video_path = "video/short1.mp4"
-    output_path = "output/short1.mp4"
+    video_path = "video/IMG_1747.mov"
+    output_path = "output/sample_output_1.mp4"
 
-    # ROI_ratio = ((0.2, 0), (0.8, 0.8))
-    ROI_ratio = ((0.22, 0), (0.84, 0.9))
+    ROI = ((600, 0), (1600, 900))
+    # ROI = ((400, 0), (1550, 900))
 
     cap = cv2.VideoCapture(video_path)
-    annotations = start(cap, False, ROI_ratio,)
+    annotations = start(cap, True, ROI, 0)
     cap.release()
     print('开始导出。。。')
     # cut_and_concat_video(video_path, annotations, output_path)

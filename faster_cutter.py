@@ -78,7 +78,7 @@ def process_video_segments(input_cap, segments, output_path, img_idx, progress=g
         output_path,
         codec="libx264",  # 视频编码器，libx264 是 H.264 编码，兼容且压缩效果好
         audio_codec="aac",  # 音频编码器
-        bitrate="6000k",  # 视频码率，码率越高质量越好，文件越大（单位：k）
+        bitrate="10000k",  # 视频码率，码率越高质量越好，文件越大（单位：k）
         preset="medium",  # 编码预设，影响编码速度和质量 tradeoff，有 "ultrafast", "medium", "slow" 等
         ffmpeg_params=["-crf", "23"]  # CRF 值，控制质量，18-28之间，越小质量越好（默认23）
     )
