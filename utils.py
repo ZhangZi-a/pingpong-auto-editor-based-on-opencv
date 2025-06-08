@@ -1,7 +1,30 @@
 import os
 import cv2
 import numpy as np
-import zipfile
+import subprocess
+
+# 检查是否能用gpu加速
+def select_encoder():
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True
+        )
+        if "h264_nvenc" in result.stdout:
+            print("正在为您使用NVIDIA 编码器加速")
+            return "h264_nvenc"
+        elif "h264_qsv" in result.stdout:
+            print("正在为您使用QSV 编码器加速")
+            return "h264_qsv"
+        elif "h264_amf" in result.stdout:
+            print("正在为您使用AMF 编码器加速")
+            return "h264_amf"
+        else:
+            print("无可用图像编码器加速,使用默认的libx264")
+            return "libx264"
+    except Exception as e:
+        print("检测失败：", e)
+        return False
 
 def clean_tmp(directory):
     for filename in os.listdir(directory):

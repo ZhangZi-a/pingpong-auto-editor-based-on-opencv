@@ -1,27 +1,34 @@
 import gradio as gr
 import cv2
 import os
+import time
 
 from series_generator import start
-from faster_cutter import process_video_segments
+from faster_cutter import ffmpeg_merge_segments
 from utils import clean_tmp, draw_roi
 
+# 传入视频后初始化相关变量
 def handle_video_list(files):
     if not files:
         return [], None, {}
     path_lst = [f.name for f in files]
     roi_dict = {}
     for path in path_lst:
-        cap = cv2.VideoCapture(path)
+        cap = cv2.VideoCapture(path, cv2.CAP_FFMPEG)
+        while not cap.isOpened():
+            time.sleep(0.2)  # 等待文件完全读入
+            cap = cv2.VideoCapture(path, cv2.CAP_FFMPEG)
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         roi_dict[path] = [w // 4, 0, w * 3 // 4, h * 3 // 4]
     return path_lst, gr.update(choices=path_lst, value=path_lst[0] if path_lst else None), roi_dict
 
+# 选择一个视频后更新相关组件
 def select_video(selected_video, frame_dict, roi_dict):
     if selected_video is None:
+        print('No video selected')
         return None, None, None, None, None, None, None
-    cap = cv2.VideoCapture(selected_video)
+    cap = cv2.VideoCapture(selected_video, cv2.CAP_FFMPEG)
 
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -39,9 +46,9 @@ def select_video(selected_video, frame_dict, roi_dict):
             gr.update(maximum=h - 1, value=y2),
             gr.update(maximum=total - 1, value=0))
 
-
+# 点击载入帧
 def load_frame_and_set_roi(frame_idx, selected_video, roi_dict, frame_dict):
-    cap = cv2.VideoCapture(selected_video)
+    cap = cv2.VideoCapture(selected_video, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
     ret, frame = cap.read()
     cap.release()
@@ -55,7 +62,7 @@ def load_frame_and_set_roi(frame_idx, selected_video, roi_dict, frame_dict):
 
     return draw_roi(frame_rgb, x1, y1, x2, y2), x1, y1, x2, y2
 
-
+# 滑动滑块同步更新图像
 def update_image_with_roi(video_path, frame_dict, roi_dict, x1, y1, x2, y2):
     frame_state = frame_dict.get(video_path, None)
     roi_dict[video_path] = (x1, y1, x2, y2)
@@ -63,7 +70,7 @@ def update_image_with_roi(video_path, frame_dict, roi_dict, x1, y1, x2, y2):
         return None
     return draw_roi(frame_state, x1, y1, x2, y2)
 
-
+# 开始处理视频
 def batch_process_video(video_lst, roi_dict):
     output_video_paths = []
 
@@ -80,20 +87,20 @@ def batch_process_video(video_lst, roi_dict):
 
         print(f"-----------------------------------------正在处理第{i + 1}个视频-----------------------------------------")
 
-        cap = cv2.VideoCapture(path)
+        cap = cv2.VideoCapture(path, cv2.CAP_FFMPEG)
         x1, y1, x2, y2 = roi_dict[path]
         roi = ((x1, y1), (x2, y2))
-        annotations = start(cap, False, roi, i + 1, gr.Progress())
+        segments = start(cap, False, roi, i + 1, gr.Progress())
         cap.release()
 
-        annotations = sorted(annotations, key=lambda arg: arg[1] - arg[0], reverse=True)
+        segments = sorted(segments, key=lambda arg: arg[1] - arg[0], reverse=True)
 
-        if len(annotations) == 0:
+        if len(segments) == 0:
             print(f"第{i + 1}个视频无对局：{temp_dir}")
             continue
 
         output_video_path = os.path.join(temp_dir, f"processed_output_{i + 1}.mp4")
-        process_video_segments(path, annotations, output_video_path, i + 1, gr.Progress())
+        ffmpeg_merge_segments(path, segments, temp_dir, output_video_path, gr.Progress(), i + 1)
         output_video_paths.append(output_video_path)
         print(f'第{i + 1}个视频已暂存到{temp_dir}')
 

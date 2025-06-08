@@ -1,9 +1,8 @@
 from tqdm import tqdm
 import cv2
 import numpy as np
-import gradio as gr
 
-from faster_cutter import process_video_segments
+from faster_cutter import ffmpeg_merge_segments
 
 def get_white_mask(f1, f2, f3):
     masks = []
@@ -85,7 +84,7 @@ def detect_ball(frame1, frame2, frame3, render, ROI_start, ROI_end, cur_frame):
     return is_detect
 
 def start(cap, render, ROI, img_idx, progress=None):
-    annotations = []
+    segments = []
 
     # 获取总帧数
     total_fps = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -95,7 +94,8 @@ def start(cap, render, ROI, img_idx, progress=None):
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))  # 帧率
     print(f'fps:{fps}')
-    threshold = int(fps * 0.13)
+    duration = fps // 2  # 以半秒为颗粒度
+    threshold = int(duration * 0.14)
 
     _, frame1 = cap.read()
     _, frame2 = cap.read()
@@ -117,7 +117,7 @@ def start(cap, render, ROI, img_idx, progress=None):
     # 记录剪辑帧
     frame_count = 1
     start_frame = frame_count
-    end_frame = frame_count
+    last_detect = 0
     # 是否跳过
     should_skip = False
 
@@ -130,25 +130,26 @@ def start(cap, render, ROI, img_idx, progress=None):
     with tqdm(total=total_fps, desc=f"正在生成切片序列 {frame_count}/{total_fps}") as pbar:
         while True:
             # 每秒统计有多少帧测到了球，以此判断是否在对局中
-            if count == fps:
+            if count == duration:
                 if detect_count >= threshold:
                     # print(f'detect count:{detect_count}')
                     steps_count += 1
-                # 到此为止不再检测到球，代表对局结束
-                elif steps_count > 0:
-                    # print(f'回合结束，本回合时长:{steps_count}s')
+                # 到此为止不再检测到足够的球，代表对局结束
+                elif steps_count > 1:  # 不超过半秒的不要:
+                    # print(f'回合结束，本回合时长:{steps_count / 2}s')
                     out_of_game = True
                     steps_count = 0
-                    end_frame = frame_count + int(fps * 0.7)
+                    end_frame = last_detect + duration
 
                     # 如果开头过早，则直接在上一个回合中加长末尾
-                    # if should_skip:
-                    #     should_skip = False
-                    #     annotations[-1][1] = end_frame
-                    # else:
-                    annotations.append([start_frame, end_frame])
+                    if should_skip:
+                        should_skip = False
+                        segments[-1][1] = end_frame
+                    else:
+                        segments.append([start_frame, end_frame])
                 # 仍然未检测到球，保持对局外状态
                 else:
+                    steps_count = 0
                     out_of_game = True
                 count = 0
                 detect_count = 0
@@ -156,7 +157,7 @@ def start(cap, render, ROI, img_idx, progress=None):
 
             ret, cur_frame = cap.read()
             if not ret:
-                annotations[-1][1] = min(frame_count, annotations[-1][1])  # 修正最后一帧
+                segments[-1][1] = min(frame_count, segments[-1][1])  # 修正最后一帧
                 break
 
             frame3 = cur_frame[ROI_start[1]:ROI_end[1], ROI_start[0]:ROI_end[0]]
@@ -164,14 +165,15 @@ def start(cap, render, ROI, img_idx, progress=None):
 
             # 检测球
             if(detect_ball(frame1, frame2, frame3, render, ROI_start, ROI_end, cur_frame)):
+                last_detect = frame_count
                 # 如果是对局的第一次检测到球，则从此时开始计数
                 if out_of_game:
                     count = 0
                     out_of_game = False
-                    start_frame = max(1, frame_count - int(fps * 0.7))
                     # 如果开始点早于之前的末尾，则合并这一段
-                    # if len(annotations) > 0 and start_frame < annotations[-1][1]:
-                    #     should_skip = True
+                    start_frame = max(1, frame_count - int(duration * 0.5))
+                    if len(segments) > 0 and frame_count < segments[-1][1]:
+                        should_skip = True
                 detect_count += 1
 
             frame1, frame2 = frame2, frame3  # 更新帧
@@ -189,22 +191,22 @@ def start(cap, render, ROI, img_idx, progress=None):
             if progress is not None:
                 progress(frame_count / total_fps, desc=f"第{img_idx}个视频处理中...  正在生成切片序列 {frame_count}/{total_fps}")
 
-    # print(annotations)
+    # print(segments)
 
     if render:
         cv2.destroyAllWindows()
 
-    return annotations
+    return segments
 
 if __name__ == '__main__':
-    video_path = "video/IMG_1747.mov"
-    output_path = "output/sample_output_1.mp4"
+    video_path = "video/sample3.mp4"
+    output_path = "output/sample_output_3.mp4"
 
     ROI = ((600, 0), (1600, 900))
     # ROI = ((400, 0), (1550, 900))
 
     cap = cv2.VideoCapture(video_path)
-    annotations = start(cap, True, ROI, 0)
+    annotations = start(cap, False, ROI, 0)
     cap.release()
     print('开始导出。。。')
-    # cut_and_concat_video(video_path, annotations, output_path)
+    ffmpeg_merge_segments(video_path, annotations, './tmp', output_path)

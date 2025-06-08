@@ -1,96 +1,75 @@
 import cv2
 import os
 from tqdm import tqdm
-from moviepy import VideoFileClip, concatenate_audioclips
-import gradio as gr
+import subprocess
 
-def process_video_segments(input_cap, segments, output_path, img_idx, progress=gr.Progress()):
-    """
-    用OpenCV裁剪多段视频帧（无声），
-    用MoviePy裁剪对应音频，
-    最后合并音视频输出。
+from utils import select_encoder
 
-    segments中时间单位为秒，比如 [(10,20), (30,40)]
-
-    :param input_cap: 输入视频路径
-    :param segments: 时间段列表，单位秒 [(start_sec, end_sec), ...]
-    :param output_path: 输出视频路径
-    """
-    cap = cv2.VideoCapture(input_cap)
-    if not cap.isOpened():
-        print("无法打开视频文件")
-        return
-
+def ffmpeg_merge_segments(input_path, segments, tmp_dir, output_path, progress=None, img_idx=0):
+    cap = cv2.VideoCapture(input_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    # 准备切片暂存目录
+    tmp_part_dir = os.path.join(tmp_dir, 'part')
+    if not os.path.exists(tmp_part_dir):
+        os.makedirs(tmp_part_dir)
+    # 准备切片记录文件
+    concat_file = os.path.join(tmp_part_dir, "concat_list.txt")
+    temp_files = []
 
-    # 总切片数
-    segments_count = len(segments)
-    count = 1
-
-    # 临时无声视频文件
-    temp_video_path = "temp_video.mp4"
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(temp_video_path, fourcc, fps, (width, height))
-
-    for (start_frame, end_frame) in tqdm(segments, desc='正在合成视频切片：'):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
-        for frame_idx in range(start_frame, end_frame):
-            ret, frame = cap.read()
-            if not ret:
-                break
-            out.write(frame)
-
-        if progress is not None:
-            progress(count / segments_count, desc=f"第{img_idx}个视频处理中...  正在合成视频切片 {count}/{segments_count}")
-        count += 1
-
-    cap.release()
-    out.release()
-
-    # 使用moviepy处理音频合成
-    video_clip = VideoFileClip(temp_video_path)
-    original_video = VideoFileClip(input_cap)
-
-    count = 0
-    audio_clips = []
-    for (start_frame, end_frame) in tqdm(segments, desc='正在合成音频切片：'):
-        start_sec = start_frame / fps
-        end_sec = end_frame / fps
-        audio_clip = original_video.audio.subclipped(start_sec, end_sec)
-        audio_clips.append(audio_clip)
+    i = 0
+    for (start, end) in tqdm(segments, desc=f'FFmpeg帧拼接中：'):
+        out_name = f"temp_{img_idx}_{i}.mp4"
+        out_path = os.path.join(tmp_part_dir, out_name)
+        temp_files.append(out_path)
+        duration = end - start
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start / fps),  # 转为秒
+            "-t", str(duration / fps),
+            "-i", input_path,
+            "-c", "copy",  # 无重编码
+            "-avoid_negative_ts", "make_zero",  # 强制从时间戳从0开始，避免变速异常
+            out_path
+        ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         if progress is not None:
-            progress(count / segments_count, desc=f"第{img_idx}个视频处理中...  正在合成音频切片 {count}/{segments_count}")
-        count += 1
+            progress((i + 1) / len(segments), desc=f"第{img_idx}个视频处理中... FFmpeg帧拼接中 {i + 1}/{len(segments)}")
 
-    final_audio = concatenate_audioclips(audio_clips)
+        i += 1
 
+    # 生成合并文件列表
+    with open(concat_file, "w") as f:
+        for fpath in temp_files:
+            f.write(f"file '{fpath}'\n")
+
+    # 合并
+    print('FFmpeg切片合并中...')
     if progress is not None:
-        progress(1, desc=f'第{img_idx}个视频处理中...  正在生成剪辑视频...')
+        progress(1, desc=f"第{img_idx}个视频处理中... FFmpeg切片合并中...")
 
-    # 给无声视频加上拼接好的音频
-    final_clip = video_clip.with_audio(final_audio)
+    # 选择编码器加速
+    fourcc = select_encoder()
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", concat_file,
+        "-c:v", fourcc,  # 使用编码器
+        "-crf", "18",  # 质量控制参数，越小画质越高（18~28，推荐18-23）
+        "-b:v", "6M",  # 码率控制
+        "-preset", "fast",  # 编码速度和压缩效率
+        "-c:a", "aac",  # 音频转为 AAC
+        output_path
+    ])
+    print(f"结果已存于：{output_path}")
 
-    final_clip.write_videofile(
-        output_path,
-        codec="libx264",  # 视频编码器，libx264 是 H.264 编码，兼容且压缩效果好
-        audio_codec="aac",  # 音频编码器
-        bitrate="10000k",  # 视频码率，码率越高质量越好，文件越大（单位：k）
-        preset="medium",  # 编码预设，影响编码速度和质量 tradeoff，有 "ultrafast", "medium", "slow" 等
-        ffmpeg_params=["-crf", "23"]  # CRF 值，控制质量，18-28之间，越小质量越好（默认23）
-    )
-
-    video_clip.close()
-    original_video.close()
-    # 删除临时无声视频
-    os.remove(temp_video_path)
+    # 清理
+    for fpath in temp_files:
+        os.remove(fpath)
+    os.remove(concat_file)
 
 if __name__ == '__main__':
-    input_path = 'video/short1.mp4'
-    output_path = 'output/test_short1.mp4'
+    input_path = 'video/sample3.mp4'
+    output_path = 'output/output_sample3.mp4'
 
-    segments = [[772, 976], [1609, 1873], [1993, 2197], [2331, 2655], [2704, 3028], [3072, 3396], [3525, 3729], [3925, 4249], [4364, 4748], [4869, 5073], [5103, 5307], [5520, 5724], [5999, 6203], [6229, 6553], [6632, 6896]]
-    process_video_segments(input_path, segments, output_path)
+    segments = [[672, 860], [960, 1266], [1800, 3216], [3338, 3526], [3899, 4264], [4316, 4622], [4765, 5349], [5569, 6346], [6558, 6923], [7076, 7264], [7442, 7630], [7926, 8409], [8464, 8947], [9344, 9591], [9772, 10019]]
+    ffmpeg_merge_segments(input_path, segments, './tmp', output_path)
