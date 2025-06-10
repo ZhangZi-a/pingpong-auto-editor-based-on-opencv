@@ -4,27 +4,31 @@ import numpy as np
 import subprocess
 
 # 检查是否能用gpu加速
-def select_encoder():
+def test_encoder(encoder):
+    """测试编码器是否真正可用"""
+    test_cmd = [
+        "ffmpeg", "-hide_banner",
+        "-f", "lavfi", "-i", "testsrc=duration=1:size=1280x720:rate=30",
+        "-c:v", encoder, "-f", "null", "-"
+    ]
+
     try:
-        result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-encoders"],
-            capture_output=True, text=True
-        )
-        if "h264_nvenc" in result.stdout:
-            print("正在为您使用NVIDIA 编码器加速")
-            return "h264_nvenc"
-        elif "h264_qsv" in result.stdout:
-            print("正在为您使用QSV 编码器加速")
-            return "h264_qsv"
-        elif "h264_amf" in result.stdout:
-            print("正在为您使用AMF 编码器加速")
-            return "h264_amf"
-        else:
-            print("无可用图像编码器加速,使用默认的libx264")
-            return "libx264"
-    except Exception as e:
-        print("检测失败：", e)
+        result = subprocess.run(test_cmd, capture_output=True, text=True)
+        return result.returncode == 0
+    except:
         return False
+
+
+def select_encoder():
+    encoders = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox']
+
+    for encoder in encoders:
+        if test_encoder(encoder):
+            print(f"已验证 {encoder} 可用")
+            return encoder
+
+    print("使用默认的 libx264 编码器")
+    return "libx264"
 
 def clean_tmp(directory):
     for filename in os.listdir(directory):
