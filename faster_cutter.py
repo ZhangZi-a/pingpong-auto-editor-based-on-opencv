@@ -20,7 +20,7 @@ def ffmpeg_merge_segments(input_path, segments, tmp_dir, output_path, progress=N
     for (start, end) in tqdm(segments, desc=f'FFmpeg帧拼接中：'):
         out_name = f"temp_{img_idx}_{i}.mp4"
         out_path = os.path.join(tmp_part_dir, out_name)
-        temp_files.append(out_path)
+        temp_files.append(out_name)  # 5.0版本的ffmpeg会基于concat文件自己拼接，这里不给路径
         duration = end - start
         cmd = [
             "ffmpeg", "-y",
@@ -64,7 +64,7 @@ def ffmpeg_merge_segments(input_path, segments, tmp_dir, output_path, progress=N
 
     # 清理
     for fpath in temp_files:
-        os.remove(fpath)
+        os.remove(os.path.join(tmp_part_dir, fpath))
     os.remove(concat_file)
 
 if __name__ == '__main__':
