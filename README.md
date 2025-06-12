@@ -11,7 +11,7 @@
 
 ### 系统依赖
 - Python 3.10
-- ffmpeg(推荐4.3.1版本，可自行官网下载或在conda环境下运行`conda install -c conda-forge ffmpeg<=5.1`)
+- ffmpeg(可自行官网下载或在conda环境下运行`conda install -c conda-forge ffmpeg`)
 - gradio 
 - OpenCV 4.5+ (`pip install opencv-python`)
 
